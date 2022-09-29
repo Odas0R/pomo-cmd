@@ -22,10 +22,6 @@ func Edit(path string) error {
 }
 
 func Notify(text string) error {
-	if text == "" {
-		return fmt.Errorf("text must not be empty")
-	}
-
 	return shell.Exec(fmt.Sprintf(`
     if [[ -S "$NVIM_SOCKET" ]]; then
       nvim --server "$NVIM_SOCKET" --remote-send '<ESC>:lua vim.notify("%s", nil, {title="Pomodoro"})<CR>'
@@ -34,10 +30,6 @@ func Notify(text string) error {
 }
 
 func NotifyByType(text string, ntype string) error {
-	if text == "" || ntype == "" {
-		return fmt.Errorf("text must not be empty")
-	}
-
 	return shell.Exec(fmt.Sprintf(`
     if [[ -S "$NVIM_SOCKET" ]]; then
       nvim --server "$NVIM_SOCKET" --remote-send '<ESC>:lua vim.notify("%s", "%s", {title="Pomodoro"})<CR>'
