@@ -9,7 +9,6 @@ import (
 	"time"
 
 	c "github.com/odas0r/pomo-cmd/pkg/config"
-	"github.com/odas0r/pomo-cmd/pkg/editor"
 	"github.com/urfave/cli/v2"
 )
 
@@ -70,7 +69,7 @@ func main() {
 						return err
 					}
 
-					return editor.Notify("Started a pomodoro session 🍅!")
+					return nil
 				},
 			},
 			{
@@ -115,7 +114,7 @@ func main() {
 						return err
 					}
 
-					return editor.Notify("Started a break pomodoro session 🍅!")
+					return nil
 				},
 			},
 			{
@@ -127,9 +126,6 @@ func main() {
 						return err
 					}
 
-					if err := editor.NotifyByType("Pomodoro was stopped 🔁", "warn"); err != nil {
-						return err
-					}
 					return nil
 				},
 			},
@@ -249,14 +245,10 @@ func main() {
 			},
 			{
 				Name: "config",
+				Action: func(_ *cli.Context) error {
+					return conf.Print()
+				},
 				Subcommands: []*cli.Command{
-					{
-						Name:  "print",
-						Usage: "Prints the current config",
-						Action: func(_ *cli.Context) error {
-							return conf.Print()
-						},
-					},
 					{
 						Name:  "edit",
 						Usage: "Opens the editor on the current config",
