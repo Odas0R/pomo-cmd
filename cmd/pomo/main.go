@@ -42,9 +42,11 @@ func main() {
 				Usage:   "start the pomodoro countdown 🕒",
 				Action: func(cCtx *cli.Context) error {
 					if cCtx.Args().Present() {
-						duration, err := strconv.Atoi(cCtx.Args().First())
+						duration := cCtx.Args().First()
+
+						_, err := time.ParseDuration(duration)
 						if err != nil {
-							return err
+							return fmt.Errorf("error: the input must be like 1m, 1h, 1s, 1h30m, etc")
 						}
 
 						if err := conf.Set("duration", duration); err != nil {
@@ -81,9 +83,11 @@ func main() {
 				},
 				Action: func(cCtx *cli.Context) error {
 					if cCtx.Args().Present() {
-						duration, err := strconv.Atoi(cCtx.Args().First())
+						duration := cCtx.Args().First()
+
+						_, err := time.ParseDuration(duration)
 						if err != nil {
-							return err
+							return fmt.Errorf("error: the input must be like 1m, 1h, 1s, 1h30m, etc")
 						}
 
 						if err := conf.Set("break", duration); err != nil {
