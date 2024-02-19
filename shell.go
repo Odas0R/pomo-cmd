@@ -1,4 +1,4 @@
-package shell
+package pomo
 
 import (
 	"os"

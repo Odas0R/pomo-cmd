@@ -1,4 +1,4 @@
-package config
+package pomo
 
 import (
 	"bytes"
@@ -9,9 +9,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/odas0r/pomo-cmd/pkg/dir"
-	"github.com/odas0r/pomo-cmd/pkg/editor"
-	"github.com/odas0r/pomo-cmd/pkg/fs"
 	"github.com/rogpeppe/go-internal/lockedfile"
 	gojsonq "github.com/thedevsaddam/gojsonq/v2"
 )
@@ -36,31 +33,29 @@ func (c Conf) Init() error {
 		return fmt.Errorf("empty directory id")
 	}
 
-	if fs.Exists(d) {
-		if err := os.RemoveAll(d); err != nil {
-			return err
-		}
-	}
-
-	if err := dir.Create(d); err != nil {
+	if err := Mkdir(d); err != nil {
 		return err
 	}
 
-	return fs.Cat("{}", c.Path())
+	if !Exists(c.Path()) {
+		return Write("{}", c.Path())
+	}
+
+	return nil
 }
 
-func (c Conf) Data() string {
+func (c Conf) Data() []byte {
 	buf, err := os.ReadFile(c.Path())
 	if err != nil {
 		log.Println(err)
-		return ""
+		return []byte("{}")
 	}
-	return string(buf)
+	return buf
 }
 
 func (c Conf) Set(key string, val any) error {
 	var config map[string]interface{}
-	if err := json.Unmarshal([]byte(c.Data()), &config); err != nil {
+	if err := json.Unmarshal(c.Data(), &config); err != nil {
 		return err
 	}
 
@@ -76,7 +71,7 @@ func (c Conf) Set(key string, val any) error {
 
 func (c Conf) Del(key string) error {
 	var config map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(c.Data()), &config); err != nil {
+	if err := json.Unmarshal(c.Data(), &config); err != nil {
 		return err
 	}
 
@@ -92,7 +87,7 @@ func (c Conf) Del(key string) error {
 
 func (c Conf) Print() error {
 	var prettyJSON bytes.Buffer
-	if err := json.Indent(&prettyJSON, []byte(c.Data()), "", "    "); err != nil {
+	if err := json.Indent(&prettyJSON, c.Data(), "", "    "); err != nil {
 		return err
 	}
 
@@ -109,7 +104,7 @@ func (c Conf) Edit() error {
 	if path == "" {
 		return fmt.Errorf("unable to locate config for %q", c.Id)
 	}
-	return editor.Edit(path)
+	return Editor(path)
 }
 
 func (c Conf) OverWrite(newconf any) error {
@@ -121,7 +116,7 @@ func (c Conf) OverWrite(newconf any) error {
 		return err
 	}
 	return lockedfile.Write(c.Path(),
-		bytes.NewReader(buf), _fs.FileMode(fs.DefaultPerms))
+		bytes.NewReader(buf), _fs.FileMode(DefaultPerms))
 }
 
 // Using github.com/thedevsaddam/gojsonq to query json files.
@@ -129,11 +124,9 @@ func (c Conf) OverWrite(newconf any) error {
 // Wiki: https://github.com/thedevsaddam/gojsonq/wiki/Queries
 func (c Conf) Query(q string) string {
 	result := gojsonq.New().File(c.Path()).Find(q)
-
 	if result == nil {
 		return ""
 	}
-
 	return fmt.Sprintf("%v", result)
 }
 
@@ -149,10 +142,5 @@ func (c Conf) mkdir() error {
 	if d == "" {
 		return fmt.Errorf("failed to find config for %q", c.Id)
 	}
-	if fs.NotExists(d) {
-		if err := dir.Create(d); err != nil {
-			return err
-		}
-	}
-	return nil
+	return Mkdir(d)
 }
