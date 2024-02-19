@@ -38,7 +38,7 @@ func (c Conf) Init() error {
 	}
 
 	if !Exists(c.Path()) {
-		return Write("{}", c.Path())
+		return WriteAppend("{}", c.Path())
 	}
 
 	return nil

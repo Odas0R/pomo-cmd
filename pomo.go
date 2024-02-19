@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/urfave/cli/v2"
@@ -26,6 +27,14 @@ var (
 		File: "config.json",
 	}
 )
+
+func init() {
+	loc, err := time.LoadLocation("Europe/Lisbon")
+	if err != nil {
+		log.Fatalf("Failed to load Lisbon timezone: %v", err)
+	}
+	time.Local = loc
+}
 
 var App = &cli.App{
 	Name:                 "pomo",
@@ -56,9 +65,35 @@ var App = &cli.App{
 		if err != nil {
 			return err
 		}
-		started := time.Now().Add(dur).Format(time.RFC3339)
+		now := time.Now()
+		endtime := now.Add(dur).Format(time.RFC3339)
 
-		if err := conf.Set("started", started); err != nil {
+		session := Session{}
+
+		if err := session.Current(); err != nil {
+			return err
+		}
+
+		if session.isRunning() {
+			if session.Type == WorkSession {
+				ok := InputConfirm("[WARNING]: A session is already running, do you want to reset it?")
+				if ok {
+					if err := session.Remove(); err != nil {
+						return err
+					}
+				} else {
+					// Do nothing
+					return nil
+				}
+			} else {
+				// Save the current session with the end time at the moment
+				if err := session.Stop(); err != nil {
+					return err
+				}
+			}
+		}
+
+		if err := startSession(now, endtime, WorkSession); err != nil {
 			return err
 		}
 
@@ -93,9 +128,36 @@ var App = &cli.App{
 				if err != nil {
 					return err
 				}
-				started := time.Now().Add(dur).Format(time.RFC3339)
 
-				if err := conf.Set("started", started); err != nil {
+				now := time.Now()
+				endtime := now.Add(dur).Format(time.RFC3339)
+
+				session := Session{}
+
+				if err := session.Current(); err != nil {
+					return err
+				}
+
+				if session.isRunning() {
+					if session.Type == BreakSession {
+						ok := InputConfirm("[WARNING]: A session is already running, do you want to reset it?")
+						if ok {
+							if err := session.Remove(); err != nil {
+								return err
+							}
+						} else {
+							// Do nothing
+							return nil
+						}
+					} else {
+						// Save the current session with the end time at the moment
+						if err := session.Stop(); err != nil {
+							return err
+						}
+					}
+				}
+
+				if err := startSession(now, endtime, BreakSession); err != nil {
 					return err
 				}
 
@@ -130,9 +192,36 @@ var App = &cli.App{
 				if err != nil {
 					return err
 				}
-				started := time.Now().Add(dur).Format(time.RFC3339)
 
-				if err := conf.Set("started", started); err != nil {
+				now := time.Now()
+				endtime := now.Add(dur).Format(time.RFC3339)
+
+				session := Session{}
+
+				if err := session.Current(); err != nil {
+					return err
+				}
+
+				if session.isRunning() {
+					if session.Type == LongBreakSession {
+						ok := InputConfirm("[WARNING]: A session is already running, do you want to reset it?")
+						if ok {
+							if err := session.Remove(); err != nil {
+								return err
+							}
+						} else {
+							// Do nothing
+							return nil
+						}
+					} else {
+						// Save the current session with the end time at the moment
+						if err := session.Stop(); err != nil {
+							return err
+						}
+					}
+				}
+
+				if err := startSession(now, endtime, LongBreakSession); err != nil {
 					return err
 				}
 
@@ -143,7 +232,21 @@ var App = &cli.App{
 			Name:  "stop",
 			Usage: "stop the pomodoro countdown",
 			Action: func(_ *cli.Context) error {
-				if err := conf.Del("started"); err != nil {
+				session := Session{}
+
+				if err := session.Current(); err != nil {
+					return err
+				}
+
+				if !session.isRunning() {
+					return fmt.Errorf("no session is running")
+				}
+
+				if err := session.Stop(); err != nil {
+					return err
+				}
+
+				if err := conf.Del("endtime"); err != nil {
 					return err
 				}
 
@@ -154,13 +257,13 @@ var App = &cli.App{
 			Name:  "print",
 			Usage: "print current to standard output",
 			Action: func(_ *cli.Context) error {
-				started := conf.Query("started")
-				if started == "" {
+				endtime := conf.Query("endtime")
+				if endtime == "" {
 					fmt.Print("No session...")
 					return nil
 				}
 
-				endt, err := time.Parse(time.RFC3339, started)
+				endt, err := time.Parse(time.RFC3339, endtime)
 				if err != nil {
 					return err
 				}
@@ -243,5 +346,108 @@ var App = &cli.App{
 				},
 			},
 		},
+		{
+			Name:  "session",
+			Usage: "Displays an summary of all the sessions that was acomplished today",
+			Action: func(_ *cli.Context) error {
+				sessions, err := ListSessions()
+				if err != nil {
+					return err
+				}
+
+				todaySessions, err := filterTodaySessions(sessions)
+				if err != nil {
+					return err
+				}
+
+				if len(todaySessions) == 0 {
+					fmt.Println("No sessions today...")
+					return nil
+				}
+
+				typeDurations := summarizeSessions(todaySessions)
+
+				fmt.Println("Today's Session Summary:")
+				for type_, duration := range typeDurations {
+					fmt.Printf("[%s] => %v\n", strings.ToUpper(string(type_)), duration)
+				}
+
+				return nil
+			},
+			Subcommands: []*cli.Command{
+				{
+					Name:  "edit",
+					Usage: "Opens the editor on the current config",
+					Action: func(_ *cli.Context) error {
+						path, err := sessionPath()
+						if err != nil {
+							return err
+						}
+						return Editor(path)
+					},
+				},
+			},
+		},
 	},
 }
+
+func startSession(start time.Time, end string, mode SessionType) error {
+	newSession := Session{
+		StartTime: start.Format(time.RFC3339),
+		Type:      mode,
+	}
+
+	if err := newSession.Start(); err != nil {
+		return err
+	}
+
+	if err := conf.Set("endtime", end); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func filterTodaySessions(sessions []Session) ([]Session, error) {
+	var todaySessions []Session
+	now := time.Now()
+	today := now.Format("2006-01-02") // YYYY-MM-DD format
+
+	for _, session := range sessions {
+		startTime, err := time.Parse(time.RFC3339, session.StartTime)
+		if err != nil {
+			return nil, fmt.Errorf("parsing session start time: %v", err)
+		}
+
+		if startTime.Format("2006-01-02") == today {
+			todaySessions = append(todaySessions, session)
+		}
+	}
+
+	return todaySessions, nil
+}
+
+func summarizeSessions(sessions []Session) (map[SessionType]time.Duration) {
+	typeDurations := make(map[SessionType]time.Duration)
+	projectDurations := make(map[string]time.Duration)
+
+	for _, session := range sessions {
+		startTime, _ := time.Parse(time.RFC3339, session.StartTime)
+		var endTime time.Time
+		var duration time.Duration
+
+		if session.EndTime != "" {
+			endTime, _ = time.Parse(time.RFC3339, session.EndTime)
+			duration = endTime.Sub(startTime)
+		} else {
+			// Assuming sessions without an end time are still running or error
+			duration = time.Since(startTime)
+		}
+
+		typeDurations[session.Type] += duration
+		projectDurations[session.Filepath] += duration
+	}
+
+	return typeDurations 
+}
+

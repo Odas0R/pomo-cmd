@@ -5,10 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const (
@@ -30,11 +30,27 @@ func Create(path string) error {
 
 // Read retrieves content from a file
 func Read(filePath string) (string, error) {
-	bytes, err := ioutil.ReadFile(filePath)
+	bytes, err := os.ReadFile(filePath)
 	if err != nil {
 		return "", err
 	}
 	return string(bytes), nil
+}
+
+func Input(prompt string) string {
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Print(prompt)
+	text, _ := reader.ReadString('\n')
+	return text
+}
+
+func InputConfirm(prompt string) bool {
+	answer := Input(prompt + " (y/n): ")
+	answer = strings.ToLower(strings.TrimSpace(answer))
+	if answer == "y" || answer == "yes" {
+		return true
+	}
+	return false
 }
 
 // ReadLines returns all lines from a file
@@ -60,9 +76,15 @@ func ReadLines(filePath string) ([]string, error) {
 	return lines, nil
 }
 
-// Write writes content to a file. It will append to the file if it already
+// Write writes content to a file. It will overwrite to the file if it already
 // exists and create the file if it does not.
 func Write(path string, text string) error {
+  return os.WriteFile(path, []byte(text), 0644)
+}
+
+// WriteAppend writes content to a file. It will append to the file if it already
+// exists and create the file if it does not.
+func WriteAppend(path string, text string) error {
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
@@ -78,18 +100,15 @@ func Write(path string, text string) error {
 }
 
 func Mkdir(path string) error {
-	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
-		err := os.Mkdir(path, 0755)
-		if err != nil {
-			return err
-		}
+	if err := os.MkdirAll(path, 0755); err != nil {
+		return fmt.Errorf("failed to create directory: %s, error: %w", path, err)
 	}
 	return nil
 }
 
 // List returns all files in a directory, same as `ls`
 func List(dir string) []string {
-	files, err := ioutil.ReadDir(dir)
+	files, err := os.ReadDir(dir)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -131,7 +150,7 @@ func InsertLine(path, newLine string) error {
 	fileContent += newLine
 	fileContent += "\n"
 
-	return ioutil.WriteFile(path, []byte(fileContent), 0644)
+	return os.WriteFile(path, []byte(fileContent), 0644)
 }
 
 func InsertLineAtIndex(path, newLine string, index int) error {
@@ -150,7 +169,7 @@ func InsertLineAtIndex(path, newLine string, index int) error {
 		fileContent += "\n"
 	}
 
-	return ioutil.WriteFile(path, []byte(fileContent), 0644)
+	return os.WriteFile(path, []byte(fileContent), 0644)
 }
 
 // Open opens a file with the default open command from the user system
