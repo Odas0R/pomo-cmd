@@ -101,6 +101,10 @@ var App = &cli.App{
 			return err
 		}
 
+		if err := conf.Set("prefix", Prefix); err != nil {
+			return err
+		}
+
 		return nil
 	},
 	Commands: []*cli.Command{
@@ -162,6 +166,10 @@ var App = &cli.App{
 				}
 
 				if err := startSession(now, endtime, BreakSession); err != nil {
+					return err
+				}
+
+				if err := conf.Set("prefix", PrefixBreak); err != nil {
 					return err
 				}
 
