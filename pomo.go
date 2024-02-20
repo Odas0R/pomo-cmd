@@ -4,20 +4,24 @@ import (
 	"fmt"
 	"log"
 	"math"
-	"strings"
 	"time"
 
+	"github.com/fatih/color"
 	"github.com/urfave/cli/v2"
 )
 
 const (
 	Duration    = "25m"
 	Break       = "5m"
-	LongBreak   = "10m"
+	LongBreak   = "15m"
 	Warn        = "1m"
 	Prefix      = "🍅"
 	PrefixBreak = "🧘"
 	PrefixWarn  = "💢"
+
+	// Goals
+	WorkGoal = 8*time.Hour + 20*time.Minute
+	RestGoal = 1*time.Hour + 40*time.Minute
 )
 
 var (
@@ -165,70 +169,6 @@ var App = &cli.App{
 			},
 		},
 		{
-			Name:  "longbreak",
-			Usage: "initialize a long break session",
-			Action: func(cCtx *cli.Context) error {
-				var arg string
-				if cCtx.Args().Present() {
-					arg = cCtx.Args().First()
-					_, err := time.ParseDuration(arg)
-					if err != nil {
-						return fmt.Errorf("error: the input must be like 1m, 1h, 1s, 1h30m, etc")
-					}
-				}
-
-				var duration string
-				if arg != "" {
-					duration = arg
-				} else {
-					duration = conf.Query("long_break")
-				}
-
-				if duration == "" {
-					duration = LongBreak
-				}
-
-				dur, err := time.ParseDuration(duration)
-				if err != nil {
-					return err
-				}
-
-				now := time.Now()
-				endtime := now.Add(dur).Format(time.RFC3339)
-
-				session := Session{}
-
-				if err := session.Current(); err != nil {
-					return err
-				}
-
-				if session.isRunning() {
-					if session.Type == LongBreakSession {
-						ok := InputConfirm("[WARNING]: A session is already running, do you want to reset it?")
-						if ok {
-							if err := session.Remove(); err != nil {
-								return err
-							}
-						} else {
-							// Do nothing
-							return nil
-						}
-					} else {
-						// Save the current session with the end time at the moment
-						if err := session.Stop(); err != nil {
-							return err
-						}
-					}
-				}
-
-				if err := startSession(now, endtime, LongBreakSession); err != nil {
-					return err
-				}
-
-				return nil
-			},
-		},
-		{
 			Name:  "stop",
 			Usage: "stop the pomodoro countdown",
 			Action: func(_ *cli.Context) error {
@@ -347,7 +287,7 @@ var App = &cli.App{
 			},
 		},
 		{
-			Name:  "session",
+			Name:  "status",
 			Usage: "Displays an summary of all the sessions that was acomplished today",
 			Action: func(_ *cli.Context) error {
 				sessions, err := ListSessions()
@@ -365,19 +305,35 @@ var App = &cli.App{
 					return nil
 				}
 
-				typeDurations := summarizeSessions(todaySessions)
+				typeDurations, _ := summarizeSessions(todaySessions)
 
-				fmt.Println("Today's Session Summary:")
-				for type_, duration := range typeDurations {
-					fmt.Printf("[%s] => %v\n", strings.ToUpper(string(type_)), duration)
-				}
+				workDuration := typeDurations[WorkSession]
+				breakDuration := typeDurations[BreakSession]
+
+				green := color.New(color.FgGreen).SprintFunc()
+				blue := color.New(color.FgBlue).SprintFunc()
+				yellow := color.New(color.FgYellow).SprintFunc()
+
+				workGoalPercent := float64(workDuration) / float64(WorkGoal) * 100
+
+				fmt.Print("\n=== Sessions today ===\n\n")
+				fmt.Printf("Work  -> %s\n", green(formatDurationHm(workDuration)))
+				fmt.Printf("Break -> %s\n", blue(formatDurationHm(breakDuration)))
+
+				fmt.Print("\n=== Goals ===\n\n")
+				fmt.Printf("Work: %s  =>  %s%%\n", yellow(formatDurationHm(WorkGoal)), yellow(fmt.Sprintf("%.2f", workGoalPercent)))
+				// Assuming RestGoal is defined and formatted similarly
+				fmt.Printf("Rest: %s\n\n", yellow(formatDurationHm(RestGoal)))
 
 				return nil
 			},
+		},
+		{
+			Name: "sessions",
 			Subcommands: []*cli.Command{
 				{
 					Name:  "edit",
-					Usage: "Opens the editor on the current config",
+					Usage: "Opens the editor on the current sessions file",
 					Action: func(_ *cli.Context) error {
 						path, err := sessionPath()
 						if err != nil {
@@ -427,7 +383,7 @@ func filterTodaySessions(sessions []Session) ([]Session, error) {
 	return todaySessions, nil
 }
 
-func summarizeSessions(sessions []Session) (map[SessionType]time.Duration) {
+func summarizeSessions(sessions []Session) (map[SessionType]time.Duration, map[string]time.Duration) {
 	typeDurations := make(map[SessionType]time.Duration)
 	projectDurations := make(map[string]time.Duration)
 
@@ -448,6 +404,11 @@ func summarizeSessions(sessions []Session) (map[SessionType]time.Duration) {
 		projectDurations[session.Filepath] += duration
 	}
 
-	return typeDurations 
+	return typeDurations, projectDurations
 }
 
+func formatDurationHm(d time.Duration) string {
+	hours := d / time.Hour
+	minutes := (d % time.Hour) / time.Minute
+	return fmt.Sprintf("%dh:%02dm", hours, minutes)
+}

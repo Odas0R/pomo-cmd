@@ -72,8 +72,16 @@ func (s *Session) Current() error {
 	}
 
 	lastLine := lines[len(lines)-1]
-	// Split by "|"
-	parts := strings.SplitN(lastLine, " | ", 2)
+
+	if err := s.Scan(lastLine); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *Session) Scan(line string) error {
+	parts := strings.SplitN(line, " | ", 2)
 	if len(parts) < 2 {
 		return fmt.Errorf("session log format error: '|' separator not found")
 	}
@@ -196,11 +204,12 @@ func ListSessions() ([]Session, error) {
 
 	sessions := make([]Session, 0, len(lines))
 	for _, line := range lines {
-		var session Session
-		_, err := fmt.Sscanf(line, "type=%s start=%s end=%s | %s", &session.Type, &session.StartTime, &session.EndTime, &session.Filepath)
-		if err != nil {
+		session := Session{}
+
+		if err := session.Scan(line); err != nil {
 			return nil, err
 		}
+
 		sessions = append(sessions, session)
 	}
 
