@@ -300,11 +300,6 @@ var App = &cli.App{
 					return err
 				}
 
-				if len(todaySessions) == 0 {
-					fmt.Println("No sessions today...")
-					return nil
-				}
-
 				typeDurations, _ := summarizeSessions(todaySessions)
 
 				workDuration := typeDurations[WorkSession]
