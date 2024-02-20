@@ -316,14 +316,13 @@ var App = &cli.App{
 
 				workGoalPercent := float64(workDuration) / float64(WorkGoal) * 100
 
-				fmt.Print("\n=== Sessions today ===\n\n")
+				fmt.Print("\n=== Sessions Today ===\n\n")
 				fmt.Printf("Work  -> %s\n", green(formatDurationHm(workDuration)))
 				fmt.Printf("Break -> %s\n", blue(formatDurationHm(breakDuration)))
 
 				fmt.Print("\n=== Goals ===\n\n")
 				fmt.Printf("Work: %s  =>  %s%%\n", yellow(formatDurationHm(WorkGoal)), yellow(fmt.Sprintf("%.2f", workGoalPercent)))
-				// Assuming RestGoal is defined and formatted similarly
-				fmt.Printf("Rest: %s\n\n", yellow(formatDurationHm(RestGoal)))
+				fmt.Printf("Break: %s\n\n", yellow(formatDurationHm(RestGoal)))
 
 				return nil
 			},
@@ -410,5 +409,10 @@ func summarizeSessions(sessions []Session) (map[SessionType]time.Duration, map[s
 func formatDurationHm(d time.Duration) string {
 	hours := d / time.Hour
 	minutes := (d % time.Hour) / time.Minute
+
+	if hours == 0 {
+		return fmt.Sprintf("%02dm", minutes)
+	}
+
 	return fmt.Sprintf("%dh:%02dm", hours, minutes)
 }
