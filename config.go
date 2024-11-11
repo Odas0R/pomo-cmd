@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 
 	"github.com/rogpeppe/go-internal/lockedfile"
-	gojsonq "github.com/thedevsaddam/gojsonq/v2"
 )
 
 type Conf struct {
@@ -85,6 +84,30 @@ func (c Conf) Del(key string) error {
 	return nil
 }
 
+func (c Conf) Query(key string) any {
+	var config map[string]interface{}
+	if err := json.Unmarshal(c.Data(), &config); err != nil {
+		return nil
+	}
+
+	val, exists := config[key]
+	if !exists {
+		return nil
+	}
+
+	return val
+}
+
+func (c Conf) QueryString(key string) string {
+	result := c.Query(key)
+	if val, ok := result.(string); !ok {
+		log.Fatalf("QueryString: %s key value is not a string", key)
+	} else {
+		return val
+	}
+	return ""
+}
+
 func (c Conf) Print() error {
 	var prettyJSON bytes.Buffer
 	if err := json.Indent(&prettyJSON, c.Data(), "", "    "); err != nil {
@@ -117,17 +140,6 @@ func (c Conf) OverWrite(newconf any) error {
 	}
 	return lockedfile.Write(c.Path(),
 		bytes.NewReader(buf), _fs.FileMode(DefaultPerms))
-}
-
-// Using github.com/thedevsaddam/gojsonq to query json files.
-//
-// Wiki: https://github.com/thedevsaddam/gojsonq/wiki/Queries
-func (c Conf) Query(q string) string {
-	result := gojsonq.New().File(c.Path()).Find(q)
-	if result == nil {
-		return ""
-	}
-	return fmt.Sprintf("%v", result)
 }
 
 // QueryPrint prints the output of Query.

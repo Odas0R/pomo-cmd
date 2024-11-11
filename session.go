@@ -18,19 +18,29 @@ const (
 )
 
 type Session struct {
-	StartTime string
-	EndTime   string
+	StartTime time.Time
+	EndTime   time.Time
+	Duration  time.Duration
 	Type      SessionType
-	Filepath  string
+	File      string
 }
 
 const SESSION_FILENAME = "session.log"
 
-func (s *Session) String() string {
-	return fmt.Sprintf("type=%s start=%s end=%s | %s", s.Type, s.StartTime, s.EndTime, s.Filepath)
+func (s *Session) Elapsed() time.Duration {
+	if !s.isRunning() {
+		return 0
+	}
+	targetEnd := s.StartTime.Add(s.Duration)
+	return targetEnd.Sub(time.Now())
 }
 
-func (s *Session) Start() error {
+func (s *Session) Start(conf Conf, dur time.Duration, mode SessionType) error {
+	s.StartTime = time.Now()
+	s.Duration = dur
+	s.EndTime = time.Time{} // empty time
+	s.Type = mode
+
 	dir := conf.DirPath()
 	if !Exists(dir) {
 		return fmt.Errorf("could not resolve config path for %q", conf.Id)
@@ -41,19 +51,23 @@ func (s *Session) Start() error {
 		return err
 	}
 
-	buffer, err := Read(filepath.Join(homedir, ".nvim-buf"))
+	currentFile, err := Read(filepath.Join(homedir, ".nvim-buf"))
 	if err != nil {
 		return err
 	}
 
-	s.Filepath = buffer
+	s.File = currentFile
 
 	sessionPath, err := sessionPath()
 	if err != nil {
 		return err
 	}
 
-	return InsertLine(sessionPath, s.String())
+	if err := InsertLine(sessionPath, s.String()); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (s *Session) Current() error {
@@ -80,6 +94,17 @@ func (s *Session) Current() error {
 	return nil
 }
 
+func (s *Session) String() string {
+	return fmt.Sprintf(
+		"type=%s start=%s end=%s duration=%s | %s",
+		s.Type,
+		s.StartTime.Format(time.RFC3339),
+		s.EndTime.Format(time.RFC3339),
+		s.Duration,
+		s.File,
+	)
+}
+
 func (s *Session) Scan(line string) error {
 	parts := strings.SplitN(line, " | ", 2)
 	if len(parts) < 2 {
@@ -97,13 +122,27 @@ func (s *Session) Scan(line string) error {
 		switch key {
 		case "type":
 			s.Type = SessionType(value)
+		case "duration":
+			dur, err := time.ParseDuration(value)
+			if err != nil {
+				return err
+			}
+			s.Duration = dur
 		case "start":
-			s.StartTime = value
+			t, err := time.Parse(time.RFC3339, value)
+			if err != nil {
+				return err
+			}
+			s.StartTime = t
 		case "end":
-			s.EndTime = value
+			t, err := time.Parse(time.RFC3339, value)
+			if err != nil {
+				return err
+			}
+			s.EndTime = t
 		}
 	}
-	s.Filepath = parts[1]
+	s.File = parts[1]
 
 	return nil
 }
@@ -122,7 +161,7 @@ func (s *Session) Save() error {
 	found := false
 
 	for i, line := range lines {
-		start := fmt.Sprintf("start=%s", s.StartTime)
+		start := fmt.Sprintf("start=%s", s.StartTime.Format(time.RFC3339))
 		if strings.Contains(line, start) {
 			lines[i] = s.String()
 			found = true
@@ -138,7 +177,7 @@ func (s *Session) Save() error {
 }
 
 func (s *Session) Stop() error {
-	s.EndTime = time.Now().Format(time.RFC3339)
+	s.EndTime = time.Now()
 	return s.Save()
 }
 
@@ -169,7 +208,7 @@ func (s *Session) Remove() error {
 }
 
 func (s *Session) isRunning() bool {
-	return s.EndTime == ""
+	return s.EndTime.IsZero()
 }
 
 func sessionPath() (string, error) {

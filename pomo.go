@@ -3,10 +3,8 @@ package pomo
 import (
 	"fmt"
 	"log"
-	"math"
 	"time"
 
-	"github.com/fatih/color"
 	"github.com/urfave/cli/v2"
 )
 
@@ -15,9 +13,9 @@ const (
 	Break       = "5m"
 	LongBreak   = "15m"
 	Warn        = "1m"
-	Prefix      = "🍅"
-	PrefixBreak = "🧘"
-	PrefixWarn  = "💢"
+	WorkPrefix  = "🍅"
+	BreakPrefix = "🧘"
+	WarnPrefix  = "💢"
 
 	// Goals
 	WorkGoal = 8*time.Hour + 20*time.Minute
@@ -44,6 +42,13 @@ var App = &cli.App{
 	Name:                 "pomo",
 	Usage:                "A pomodoro command line interface 🍅",
 	EnableBashCompletion: true,
+	Flags: []cli.Flag{
+		&cli.BoolFlag{
+			Name:    "ui",
+			Aliases: []string{"u"},
+			Usage:   "display interactive terminal UI",
+		},
+	},
 	Action: func(cCtx *cli.Context) error {
 		var arg string
 		if cCtx.Args().Present() {
@@ -54,26 +59,22 @@ var App = &cli.App{
 			}
 		}
 
-		var duration string
+		var durationStr string
 		if arg != "" {
-			duration = arg
+			durationStr = arg
 		} else {
-			duration = conf.Query("duration")
+			durationStr = conf.QueryString("duration")
+		}
+		if durationStr == "" {
+			durationStr = Duration
 		}
 
-		if duration == "" {
-			duration = Duration
-		}
-
-		dur, err := time.ParseDuration(duration)
+		duration, err := time.ParseDuration(durationStr)
 		if err != nil {
 			return err
 		}
-		now := time.Now()
-		endtime := now.Add(dur).Format(time.RFC3339)
 
-		session := Session{}
-
+		var session Session
 		if err := session.Current(); err != nil {
 			return err
 		}
@@ -86,7 +87,9 @@ var App = &cli.App{
 						return err
 					}
 				} else {
-					// Do nothing
+					if cCtx.Bool("ui") {
+						return StartUI()
+					}
 					return nil
 				}
 			} else {
@@ -97,12 +100,16 @@ var App = &cli.App{
 			}
 		}
 
-		if err := startSession(now, endtime, WorkSession); err != nil {
+		if err := session.Start(conf, duration, WorkSession); err != nil {
 			return err
 		}
 
-		if err := conf.Set("prefix", Prefix); err != nil {
+		if err := conf.Set("prefix", WorkPrefix); err != nil {
 			return err
+		}
+
+		if cCtx.Bool("ui") {
+			return StartUI()
 		}
 
 		return nil
@@ -111,6 +118,13 @@ var App = &cli.App{
 		{
 			Name:  "break",
 			Usage: "initialize a break session",
+			Flags: []cli.Flag{
+				&cli.BoolFlag{
+					Name:    "ui",
+					Aliases: []string{"u"},
+					Usage:   "display interactive terminal UI",
+				},
+			},
 			Action: func(cCtx *cli.Context) error {
 				var arg string
 				if cCtx.Args().Present() {
@@ -121,27 +135,23 @@ var App = &cli.App{
 					}
 				}
 
-				var duration string
+				var durationStr string
 				if arg != "" {
-					duration = arg
+					durationStr = arg
 				} else {
-					duration = conf.Query("break")
+					durationStr = conf.QueryString("break")
 				}
 
-				if duration == "" {
-					duration = Break
+				if durationStr == "" {
+					durationStr = Break
 				}
 
-				dur, err := time.ParseDuration(duration)
+				duration, err := time.ParseDuration(durationStr)
 				if err != nil {
 					return err
 				}
 
-				now := time.Now()
-				endtime := now.Add(dur).Format(time.RFC3339)
-
-				session := Session{}
-
+				var session Session
 				if err := session.Current(); err != nil {
 					return err
 				}
@@ -154,23 +164,28 @@ var App = &cli.App{
 								return err
 							}
 						} else {
-							// Do nothing
+							if cCtx.Bool("ui") {
+								return StartUI()
+							}
 							return nil
 						}
 					} else {
-						// Save the current session with the end time at the moment
 						if err := session.Stop(); err != nil {
 							return err
 						}
 					}
 				}
 
-				if err := startSession(now, endtime, BreakSession); err != nil {
+				if err := session.Start(conf, duration, WorkSession); err != nil {
 					return err
 				}
 
-				if err := conf.Set("prefix", PrefixBreak); err != nil {
+				if err := conf.Set("prefix", BreakPrefix); err != nil {
 					return err
+				}
+
+				if cCtx.Bool("ui") {
+					return StartUI()
 				}
 
 				return nil
@@ -180,8 +195,7 @@ var App = &cli.App{
 			Name:  "stop",
 			Usage: "stop the pomodoro countdown",
 			Action: func(_ *cli.Context) error {
-				session := Session{}
-
+				var session Session
 				if err := session.Current(); err != nil {
 					return err
 				}
@@ -194,10 +208,6 @@ var App = &cli.App{
 					return err
 				}
 
-				if err := conf.Del("endtime"); err != nil {
-					return err
-				}
-
 				return nil
 			},
 		},
@@ -205,54 +215,43 @@ var App = &cli.App{
 			Name:  "print",
 			Usage: "print current to standard output",
 			Action: func(_ *cli.Context) error {
-				endtime := conf.Query("endtime")
-				if endtime == "" {
-					fmt.Print("No session...")
+				var session Session
+				if err := session.Current(); err != nil {
+					return err
+				}
+
+				if !session.isRunning() {
 					return nil
 				}
 
-				endt, err := time.Parse(time.RFC3339, endtime)
+				// Get elapsed time (remaining time)
+				remaining := session.Elapsed()
+
+				// Get configuration values
+				prefix := conf.QueryString("prefix")          // 🍅
+				prefixWarn := conf.QueryString("prefix_warn") // 💢
+				warn := conf.QueryString("warn")              // 1m
+
+				// Parse warning threshold
+				warnTime, err := time.ParseDuration(warn)
 				if err != nil {
 					return err
 				}
 
-				var subt time.Duration
-				subc := conf.Query("interval")
-
-				if subc != "" {
-					subt, err = time.ParseDuration(subc)
-					if err != nil {
-						return err
+				var timeStr string
+				if remaining < 0 {
+					// For negative time, remove the minus and add a "-" prefix to the formatted time
+					timeStr = "-" + StopWatchFormat(-remaining)
+				} else {
+					timeStr = StopWatchFormat(remaining)
+					// Switch to warning prefix when less than 1 minute remains
+					// and blink every 2 seconds
+					if remaining < warnTime && remaining%(time.Second*2) == 0 {
+						prefix = prefixWarn
 					}
 				}
 
-				prefix := conf.Query("prefix")
-				prefixWarn := conf.Query("prefix_warn")
-				warn := conf.Query("warn")
-
-				warnt, err := time.ParseDuration(warn)
-				if err != nil {
-					return err
-				}
-
-				sec := time.Second
-				left := time.Until(endt).Round(sec)
-
-				var sub float64
-				if subc != "" {
-					sub = math.Abs(math.Mod(left.Seconds(), subt.Seconds()))
-				}
-
-				if left < warnt && left%(sec*2) == 0 {
-					// alternate the prefix
-					prefix = prefixWarn
-				}
-
-				if subc != "" {
-					fmt.Printf("%v %v(%02v)", prefix, StopWatchFormat(left), sub)
-				} else {
-					fmt.Printf("%v %v", prefix, StopWatchFormat(left))
-				}
+				fmt.Printf("%v %v", prefix, timeStr)
 
 				return nil
 			},
@@ -269,8 +268,8 @@ var App = &cli.App{
 				conf.Set("break", Break)
 				conf.Set("long_break", LongBreak)
 				conf.Set("warn", Warn)
-				conf.Set("prefix", Prefix)
-				conf.Set("prefix_warn", PrefixWarn)
+				conf.Set("prefix", WorkPrefix)
+				conf.Set("prefix_warn", WarnPrefix)
 
 				return nil
 			},
@@ -298,36 +297,7 @@ var App = &cli.App{
 			Name:  "status",
 			Usage: "Displays an summary of all the sessions that was acomplished today",
 			Action: func(_ *cli.Context) error {
-				sessions, err := ListSessions()
-				if err != nil {
-					return err
-				}
-
-				todaySessions, err := filterTodaySessions(sessions)
-				if err != nil {
-					return err
-				}
-
-				typeDurations, _ := summarizeSessions(todaySessions)
-
-				workDuration := typeDurations[WorkSession]
-				breakDuration := typeDurations[BreakSession]
-
-				green := color.New(color.FgGreen).SprintFunc()
-				blue := color.New(color.FgBlue).SprintFunc()
-				yellow := color.New(color.FgYellow).SprintFunc()
-
-				workGoalPercent := float64(workDuration) / float64(WorkGoal) * 100
-
-				fmt.Print("\n=== Sessions Today ===\n\n")
-				fmt.Printf("Work  -> %s\n", green(formatDurationHm(workDuration)))
-				fmt.Printf("Break -> %s\n", blue(formatDurationHm(breakDuration)))
-
-				fmt.Print("\n=== Goals ===\n\n")
-				fmt.Printf("Work: %s  =>  %s%%\n", yellow(formatDurationHm(WorkGoal)), yellow(fmt.Sprintf("%.2f", workGoalPercent)))
-				fmt.Printf("Break: %s\n\n", yellow(formatDurationHm(RestGoal)))
-
-				return nil
+				return ShowStatus()
 			},
 		},
 		{
@@ -347,75 +317,4 @@ var App = &cli.App{
 			},
 		},
 	},
-}
-
-func startSession(start time.Time, end string, mode SessionType) error {
-	newSession := Session{
-		StartTime: start.Format(time.RFC3339),
-		Type:      mode,
-	}
-
-	if err := newSession.Start(); err != nil {
-		return err
-	}
-
-	if err := conf.Set("endtime", end); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func filterTodaySessions(sessions []Session) ([]Session, error) {
-	var todaySessions []Session
-	now := time.Now()
-	today := now.Format("2006-01-02") // YYYY-MM-DD format
-
-	for _, session := range sessions {
-		startTime, err := time.Parse(time.RFC3339, session.StartTime)
-		if err != nil {
-			return nil, fmt.Errorf("parsing session start time: %v", err)
-		}
-
-		if startTime.Format("2006-01-02") == today {
-			todaySessions = append(todaySessions, session)
-		}
-	}
-
-	return todaySessions, nil
-}
-
-func summarizeSessions(sessions []Session) (map[SessionType]time.Duration, map[string]time.Duration) {
-	typeDurations := make(map[SessionType]time.Duration)
-	projectDurations := make(map[string]time.Duration)
-
-	for _, session := range sessions {
-		startTime, _ := time.Parse(time.RFC3339, session.StartTime)
-		var endTime time.Time
-		var duration time.Duration
-
-		if session.EndTime != "" {
-			endTime, _ = time.Parse(time.RFC3339, session.EndTime)
-			duration = endTime.Sub(startTime)
-		} else {
-			// Assuming sessions without an end time are still running or error
-			duration = time.Since(startTime)
-		}
-
-		typeDurations[session.Type] += duration
-		projectDurations[session.Filepath] += duration
-	}
-
-	return typeDurations, projectDurations
-}
-
-func formatDurationHm(d time.Duration) string {
-	hours := d / time.Hour
-	minutes := (d % time.Hour) / time.Minute
-
-	if hours == 0 {
-		return fmt.Sprintf("%02dm", minutes)
-	}
-
-	return fmt.Sprintf("%dh:%02dm", hours, minutes)
 }

@@ -1,5 +1,5 @@
 build:
-	rm -f ./pomo && go build -o pomo ./cmd/pomo
+	rm -f ./pomo && go build -o pomo ./cmd/pomo && install ./pomo /home/odas0r/.local/bin/pomo
 test:
 	clear && gotestsum --format standard-verbose ./cmd/pomo
 watch:
