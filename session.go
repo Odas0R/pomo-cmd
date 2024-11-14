@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // create a enum for the session type
@@ -18,6 +20,7 @@ const (
 )
 
 type Session struct {
+	ID        uuid.UUID
 	StartTime time.Time
 	EndTime   time.Time
 	Duration  time.Duration
@@ -36,6 +39,7 @@ func (s *Session) Elapsed() time.Duration {
 }
 
 func (s *Session) Start(conf Conf, dur time.Duration, mode SessionType) error {
+	s.ID = uuid.New()
 	s.StartTime = time.Now()
 	s.Duration = dur
 	s.EndTime = time.Time{} // empty time
@@ -70,7 +74,7 @@ func (s *Session) Start(conf Conf, dur time.Duration, mode SessionType) error {
 	return nil
 }
 
-func (s *Session) Current() error {
+func (s *Session) Get() error {
 	sessionPath, err := sessionPath()
 	if err != nil {
 		return err
@@ -96,7 +100,8 @@ func (s *Session) Current() error {
 
 func (s *Session) String() string {
 	return fmt.Sprintf(
-		"type=%s start=%s end=%s duration=%s | %s",
+		"id=%s type=%s start=%s end=%s duration=%s | %s",
+		s.ID,
 		s.Type,
 		s.StartTime.Format(time.RFC3339),
 		s.EndTime.Format(time.RFC3339),
@@ -120,6 +125,8 @@ func (s *Session) Scan(line string) error {
 		}
 		key, value := keyValue[0], keyValue[1]
 		switch key {
+		case "id":
+			s.ID = uuid.MustParse(value)
 		case "type":
 			s.Type = SessionType(value)
 		case "duration":
@@ -135,11 +142,15 @@ func (s *Session) Scan(line string) error {
 			}
 			s.StartTime = t
 		case "end":
-			t, err := time.Parse(time.RFC3339, value)
-			if err != nil {
-				return err
+			if value == "" {
+				s.EndTime = time.Time{}
+			} else {
+				t, err := time.Parse(time.RFC3339, value)
+				if err != nil {
+					return err
+				}
+				s.EndTime = t
 			}
-			s.EndTime = t
 		}
 	}
 	s.File = parts[1]
@@ -161,7 +172,7 @@ func (s *Session) Save() error {
 	found := false
 
 	for i, line := range lines {
-		start := fmt.Sprintf("start=%s", s.StartTime.Format(time.RFC3339))
+		start := fmt.Sprintf("id=%s", s.ID)
 		if strings.Contains(line, start) {
 			lines[i] = s.String()
 			found = true
@@ -181,7 +192,13 @@ func (s *Session) Stop() error {
 	return s.Save()
 }
 
-func (s *Session) Remove() error {
+func (s *Session) Reset() error {
+	s.StartTime = time.Now()
+	s.EndTime = time.Time{}
+	return s.Save()
+}
+
+func (s *Session) Delete() error {
 	sessionPath, err := sessionPath()
 	if err != nil {
 		return err
@@ -197,7 +214,7 @@ func (s *Session) Remove() error {
 	}
 
 	for i, line := range lines {
-		start := fmt.Sprintf("start=%s", s.StartTime)
+		start := fmt.Sprintf("id=%s", s.ID)
 		if strings.Contains(line, start) {
 			lines = append(lines[:i], lines[i+1:]...)
 			break

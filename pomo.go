@@ -75,7 +75,7 @@ var App = &cli.App{
 		}
 
 		var session Session
-		if err := session.Current(); err != nil {
+		if err := session.Get(); err != nil {
 			return err
 		}
 
@@ -83,7 +83,7 @@ var App = &cli.App{
 			if session.Type == WorkSession {
 				ok := InputConfirm("[WARNING]: A session is already running, do you want to reset it?")
 				if ok {
-					if err := session.Remove(); err != nil {
+					if err := session.Delete(); err != nil {
 						return err
 					}
 				} else {
@@ -152,7 +152,7 @@ var App = &cli.App{
 				}
 
 				var session Session
-				if err := session.Current(); err != nil {
+				if err := session.Get(); err != nil {
 					return err
 				}
 
@@ -160,7 +160,7 @@ var App = &cli.App{
 					if session.Type == BreakSession {
 						ok := InputConfirm("[WARNING]: A session is already running, do you want to reset it?")
 						if ok {
-							if err := session.Remove(); err != nil {
+							if err := session.Delete(); err != nil {
 								return err
 							}
 						} else {
@@ -196,7 +196,7 @@ var App = &cli.App{
 			Usage: "stop the pomodoro countdown",
 			Action: func(_ *cli.Context) error {
 				var session Session
-				if err := session.Current(); err != nil {
+				if err := session.Get(); err != nil {
 					return err
 				}
 
@@ -216,7 +216,7 @@ var App = &cli.App{
 			Usage: "print current to standard output",
 			Action: func(_ *cli.Context) error {
 				var session Session
-				if err := session.Current(); err != nil {
+				if err := session.Get(); err != nil {
 					return err
 				}
 

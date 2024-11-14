@@ -45,7 +45,6 @@ func (m model) Init() tea.Cmd {
 	return tick()
 }
 
-
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -128,16 +127,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tick()
 
 		case "r": // Reset current timer
-			// Stop current session
-			if err := m.session.Stop(); err != nil {
+			if err := m.session.Reset(); err != nil {
 				fmt.Printf("Failed to stop session: %v\n", err)
 			}
-			// Start a new session with same duration and type
-			var newSession Session
-			if err := newSession.Start(conf, m.session.Duration, m.session.Type); err != nil {
-				fmt.Printf("Failed to reset session: %v\n", err)
-			}
-			m.session = newSession
 			m.notified = false
 		}
 		return m, tick()
@@ -145,10 +137,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case time.Time:
 		remaining := m.session.Elapsed()
 		if !m.notified && remaining <= 0 && m.session.isRunning() {
-			if err := m.session.Stop(); err != nil {
-				fmt.Printf("Failed to stop session: %v\n", err)
-			}
-
 			title := "Pomo Timer"
 			message := "Time to take a break!"
 			if m.session.Type == BreakSession {
@@ -228,7 +216,7 @@ func (m model) View() string {
 
 func StartUI() error {
 	var session Session
-	if err := session.Current(); err != nil {
+	if err := session.Get(); err != nil {
 		return fmt.Errorf("failed to get current session: %v", err)
 	}
 
